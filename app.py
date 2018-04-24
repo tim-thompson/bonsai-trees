@@ -1,9 +1,9 @@
-from flask import Flask, make_response, jsonify, abort, request
-from flask_sqlalchemy import SQLAlchemy
-from flask_marshmallow import Marshmallow
-
-from uuid import uuid4 as uuid
 from datetime import datetime
+
+from flask import Flask, jsonify, abort, request
+from flask_marshmallow import Marshmallow
+from flask_sqlalchemy import SQLAlchemy
+from marshmallow import ValidationError, fields
 
 app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///test.db'
@@ -14,7 +14,7 @@ ma = Marshmallow(app)
 
 
 class Tree(db.Model):
-    id = db.Column(db.String, primary_key=True)
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     species = db.Column(db.String)
     name = db.Column(db.String)
     description = db.Column(db.String)
@@ -27,6 +27,11 @@ class Tree(db.Model):
 
 
 class TreeSchema(ma.ModelSchema):
+    id = fields.Int(dump_only=True)
+    name = fields.String(required=True)
+    user_id = fields.String(dump_only=True)
+    timestamp = fields.DateTime(dump_only=True)
+
     class Meta:
         model = Tree
 
@@ -48,7 +53,7 @@ def get_trees():
     trees = Tree.query.filter_by(user_id=user_id).all()
     if len(trees) == 0:
         abort(404)
-    return trees_schema.jsonify(trees), 200
+    return trees_schema.dumps(trees), 200
 
 
 @app.route('/trees/<string:tree_id>', methods=['GET'])
@@ -59,40 +64,41 @@ def get_tree(tree_id):
         abort(404)
     if tree.user_id != user_id:
         abort(403)
-    return tree_schema.jsonify(tree), 200
+    return tree_schema.dumps(tree), 200
 
 
 @app.route('/trees', methods=['POST'])
 def create_tree():
     user_id = authorise()
-    data = request.get_json()
-    tree = Tree(
-        id=str(uuid()),
-        species=data['species'],
-        name=data['name'],
-        description=data['description'],
-        purchase_cost=data['purchase_cost'],
-        purchase_date=datetime.strptime(data['purchase_date'], "%Y-%m-%d"),
-        planted_date=datetime.strptime(data['planted_date'], "%Y-%m-%d"),
-        age=data['age'],
-        timestamp=datetime.now(),
-        user_id=user_id
-    )
+    tree = None
+    try:
+        tree = tree_schema.load(request.get_json())
+    except ValidationError as err:
+        abort(422)
+    tree.timestamp = datetime.now()
+    tree.user_id = user_id
     db.session.add(tree)
     db.session.commit()
-    return tree_schema.jsonify(tree), 201
-
-
-@app.route('/trees/<string:tree_id>', methods=['PUT'])
-def put_update_tree(tree_id):
-    user_id = authorise()
-    return tree_id
+    return tree_schema.dumps(tree), 201
 
 
 @app.route('/trees/<string:tree_id>', methods=['PATCH'])
 def patch_update_tree(tree_id):
     user_id = authorise()
-    return tree_id
+    tree = Tree.query.filter_by(id=tree_id).first()
+    if tree is None:
+        abort(404)
+    if tree.user_id != user_id:
+        abort(403)
+    for key in request.get_json():
+        # Check the attribute exists otherwise return 422
+        try:
+            getattr(tree, key)
+        except AttributeError as error:
+            abort(422)
+        setattr(tree, key, request.get_json()[key])
+    db.session.commit()
+    return tree_schema.dumps(tree), 200
 
 
 @app.route('/trees/<string:tree_id>', methods=['DELETE'])
@@ -101,6 +107,8 @@ def delete_tree(tree_id):
     tree = Tree.query.filter_by(id=tree_id).first()
     if tree is None:
         abort(404)
+    if tree.user_id != user_id:
+        abort(403)
     db.session.delete(tree)
     db.session.commit()
     return '', 204
@@ -108,14 +116,19 @@ def delete_tree(tree_id):
 
 @app.errorhandler(403)
 def forbidden(error):
-    return make_response(jsonify({'status': 403, 'message': 'Forbidden'}), 403)
+    return jsonify({'status': 403, 'message': 'Forbidden'}), 403
 
 
 @app.errorhandler(404)
 def not_found(error):
-    return make_response(jsonify({'status': 404, 'message': 'Not found'}), 404)
+    return jsonify({'status': 404, 'message': 'Not found'}), 404
+
+
+@app.errorhandler(422)
+def unprocessable_entity(error):
+    return jsonify({'status': 422, 'message': 'Unprocessable Entity'}), 422
 
 
 @app.errorhandler(500)
 def internal_server(error):
-    return make_response(jsonify({'status': 500, 'message': 'Internal Server Error'}), 500)
+    return jsonify({'status': 500, 'message': 'Internal Server Error'}), 500
