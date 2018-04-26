@@ -1,0 +1,19 @@
+{
+  "dev": {
+    "app_function": "app.app",
+    "authorizer": {
+      "type": "COGNITO_USER_POOLS",
+      "provider_arns": [
+        "arn:aws:cognito-idp:eu-west-2:450570752538:userpool/eu-west-2_sSU1pKEtK"
+      ]
+    },
+    "aws_region": "eu-west-2",
+    "context_header_mappings": {
+      "user_id": "authorizer.claims.cognito:username"
+    },
+    "profile_name": "default",
+    "project_name": "bonsai-trees",
+    "runtime": "python3.6",
+    "s3_bucket": "zappa-bonsai"
+  }
+}
