@@ -22,7 +22,7 @@ Jinja2==2.10
 jmespath==0.9.3
 kappa==0.6.0
 lambda-packages==0.19.0
-Mako==1.0.7
+Mako==1.2.2
 MarkupSafe==1.0
 marshmallow==3.0.0b8
 marshmallow-sqlalchemy==0.13.2
